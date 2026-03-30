@@ -78,6 +78,7 @@
 #endif
 
 #define RANDOMIZER_VAR_SPECIES_MODE         VAR_RANDOMIZER_MODE
+#define RANDOMIZER_VAR_MONO_REGION          VAR_RANDOMIZER_REGION
 
 #if RANDOMIZER_SEED_IS_TRAINER_ID == FALSE
 #define RANDOMIZER_VAR_SEED_L               VAR_RANDOMIZER_SEED_L
@@ -128,6 +129,7 @@ enum RandomizerReason
 enum RandomizerOption {
     // Controls how a species is randomized.
     RANDOMIZER_OPTION_SPECIES_MODE,
+    RANDOMIZER_OPTION_MONO_REGION,
 };
 
 enum RandomizerSpeciesMode {
@@ -136,6 +138,7 @@ enum RandomizerSpeciesMode {
     MON_RANDOM_LEGEND_AWARE,
     MON_RANDOM_BST,
     MON_EVOLUTION,
+    MON_MONO_REGION,
     // Other modes here.
 
     // A dummy mode to end the list.

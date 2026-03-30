@@ -350,6 +350,7 @@ script InsideOfTruck_EventScript_SpeciesRandomizerOptions {
 		dynmultipush("Normal species", MON_RANDOM)
 		dynmultipush("Scaled species", MON_RANDOM_BST)
 		dynmultipush("Legendary-aware species", MON_RANDOM_LEGEND_AWARE)
+		dynmultipush("Mono region species", MON_MONO_REGION)
 		dynmultipush("Done", MULTI_B_PRESSED)
 	}
 	else
@@ -360,30 +361,42 @@ script InsideOfTruck_EventScript_SpeciesRandomizerOptions {
 				dynmultipush("{COLOR GREEN}{SHADOW LIGHT_GREEN}Normal species", MON_RANDOM)
 				dynmultipush("Scaled species", MON_RANDOM_BST)
 				dynmultipush("Legendary-aware species", MON_RANDOM_LEGEND_AWARE)
+				dynmultipush("Mono region species", MON_MONO_REGION)
 				dynmultipush("Done", MULTI_B_PRESSED)
 
 			case MON_RANDOM_BST:
 				dynmultipush("Normal species", MON_RANDOM)
 				dynmultipush("{COLOR GREEN}{SHADOW LIGHT_GREEN}Scaled species", MON_RANDOM_BST)
 				dynmultipush("Legendary-aware species", MON_RANDOM_LEGEND_AWARE)
+				dynmultipush("Mono region species", MON_MONO_REGION)
 				dynmultipush("Done", MULTI_B_PRESSED)
 
 			case MON_RANDOM_LEGEND_AWARE:
 				dynmultipush("Normal species", MON_RANDOM)
 				dynmultipush("Scaled species", MON_RANDOM_BST)
 				dynmultipush("{COLOR GREEN}{SHADOW LIGHT_GREEN}Legendary-aware species", MON_RANDOM_LEGEND_AWARE)
+				dynmultipush("Mono region species", MON_MONO_REGION)
+				dynmultipush("Done", MULTI_B_PRESSED)
+
+			case MON_MONO_REGION:
+				dynmultipush("Normal species", MON_RANDOM)
+				dynmultipush("Scaled species", MON_RANDOM_BST)
+				dynmultipush("Legendary-aware species", MON_RANDOM_LEGEND_AWARE)
+				dynmultipush("{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono region species", MON_MONO_REGION)
 				dynmultipush("Done", MULTI_B_PRESSED)
 
 			case MAX_MON_MODE:
 				dynmultipush("Normal species", MON_RANDOM)
 				dynmultipush("Scaled species", MON_RANDOM_BST)
 				dynmultipush("Legendary-aware species", MON_RANDOM_LEGEND_AWARE)
+				dynmultipush("Mono region species", MON_MONO_REGION)
 				dynmultipush("Done", MULTI_B_PRESSED)
-			
+
 			default:
 				dynmultipush("Normal species", MON_RANDOM)
 				dynmultipush("Scaled species", MON_RANDOM_BST)
 				dynmultipush("Legendary-aware species", MON_RANDOM_LEGEND_AWARE)
+				dynmultipush("Mono region species", MON_MONO_REGION)
 				dynmultipush("Done", MULTI_B_PRESSED)
 		}
 
@@ -449,7 +462,7 @@ script InsideOfTruck_EventScript_SpeciesRandomizerOptions {
 		goto(InsideOfTruck_EventScript_SpeciesRandomizerOptions)
 	}
 
-	if(var(VAR_RESULT) == MON_RANDOM_LEGEND_AWARE) 
+	if(var(VAR_RESULT) == MON_RANDOM_LEGEND_AWARE)
 	{
 		if(var(VAR_RANDOMIZER_MODE) == MON_RANDOM_LEGEND_AWARE)
 		{
@@ -474,6 +487,54 @@ script InsideOfTruck_EventScript_SpeciesRandomizerOptions {
 		goto(InsideOfTruck_EventScript_SpeciesRandomizerOptions)
 	}
 
+	if(var(VAR_RESULT) == MON_MONO_REGION)
+	{
+		if(var(VAR_RANDOMIZER_MODE) == MON_MONO_REGION)
+		{
+			msgbox(MonoRegionRandomizerAlreadyOnYesNo, MSGBOX_YESNO)
+			if(var(VAR_RESULT) == YES)
+			{
+				clearflag(FLAG_RANDOMIZER_ENABLED)
+				setvar(VAR_RANDOMIZER_MODE, MAX_MON_MODE)
+				setvar(VAR_RANDOMIZER_REGION, 0)
+				msgbox(MonoRegionRandomizerDisabled)
+			}
+		}
+		else
+		{
+			msgbox(MonoRegionRandomizerAlreadyOffYesNo, MSGBOX_YESNO)
+			if(var(VAR_RESULT) == YES)
+			{
+				goto(InsideOfTruck_EventScript_SelectRegion)
+			}
+		}
+		goto(InsideOfTruck_EventScript_SpeciesRandomizerOptions)
+	}
+
+}
+
+script InsideOfTruck_EventScript_SelectRegion {
+	msgbox(SelectRegionPrompt)
+	dynmultipush("Gen 1 (Kanto)", 1)
+	dynmultipush("Gen 2 (Johto)", 2)
+	dynmultipush("Gen 3 (Hoenn)", 3)
+	dynmultipush("Gen 4 (Sinnoh)", 4)
+	dynmultipush("Gen 5 (Unova)", 5)
+	dynmultipush("Gen 6 (Kalos)", 6)
+	dynmultipush("Gen 7 (Alola)", 7)
+	dynmultipush("Gen 8 (Galar)", 8)
+	dynmultipush("Gen 9 (Paldea)", 9)
+	dynmultistack(0, 0, FALSE, 6, FALSE, 0, DYN_MULTICHOICE_CB_NONE)
+
+	copyvar(VAR_RANDOMIZER_REGION, VAR_RESULT)
+
+	if(var(VAR_RESULT) >= 1 && var(VAR_RESULT) <= 9)
+	{
+		setflag(FLAG_RANDOMIZER_ENABLED)
+		setvar(VAR_RANDOMIZER_MODE, MON_MONO_REGION)
+		msgbox(MonoRegionRandomizerEnabled)
+	}
+	goto(InsideOfTruck_EventScript_SpeciesRandomizerOptions)
 }
 
 
@@ -792,10 +853,47 @@ text LegendsAwareRandomizerEnabled
 
 text LegendsAwareRandomizerDisabled
 {
-	"{COLOR RED}{SHADOW LIGHT_RED}Legendary-aware Species Randomizer\n" 
+	"{COLOR RED}{SHADOW LIGHT_RED}Legendary-aware Species Randomizer\n"
 	"disabled."
 }
 
+text MonoRegionRandomizerAlreadyOnYesNo
+{
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono Region Species Randomizer{COLOR DARK_GRAY}{SHADOW LIGHT_GRAY} is\n"
+	"a mode where only Pokémon from a\l"
+	"specific generation will appear in\l"
+	"wild encounters and battles.\p"
+	"Do you want to turn off the\n"
+	"{COLOR RED}{SHADOW LIGHT_RED}Mono Region Species Randomizer?"
+}
+
+text MonoRegionRandomizerAlreadyOffYesNo
+{
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono Region Species Randomizer{COLOR DARK_GRAY}{SHADOW LIGHT_GRAY} is\n"
+	"a mode where only Pokémon from a\l"
+	"specific generation will appear in\l"
+	"wild encounters and battles.\p"
+	"Do you want to turn on the\n"
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono Region Species Randomizer?"
+}
+
+text MonoRegionRandomizerEnabled
+{
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono Region Species Randomizer\n"
+	"enabled."
+}
+
+text MonoRegionRandomizerDisabled
+{
+	"{COLOR RED}{SHADOW LIGHT_RED}Mono Region Species Randomizer\n"
+	"disabled."
+}
+
+text SelectRegionPrompt
+{
+	"Which generation would you like\n"
+	"to restrict encounters to?"
+}
 
 text CustomSettingsSaved
 {

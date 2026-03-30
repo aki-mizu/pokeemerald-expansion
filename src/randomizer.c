@@ -257,6 +257,57 @@ static bool32 IsSpeciesPermitted(u16 species)
     return TRUE;
 };
 
+static u8 GetSpeciesGeneration(u16 species)
+{
+    u16 dexNum = gSpeciesInfo[species].natDexNum;
+
+    if (dexNum >= 1 && dexNum <= 151)
+        return 1;
+    else if (dexNum >= 152 && dexNum <= 251)
+        return 2;
+    else if (dexNum >= 252 && dexNum <= 386)
+        return 3;
+    else if (dexNum >= 387 && dexNum <= 493)
+        return 4;
+    else if (dexNum >= 494 && dexNum <= 649)
+        return 5;
+    else if (dexNum >= 650 && dexNum <= 721)
+        return 6;
+    else if (dexNum >= 722 && dexNum <= 809)
+        return 7;
+    else if (dexNum >= 810 && dexNum <= 905)
+        return 8;
+    else if (dexNum >= 906 && dexNum <= 1025)
+        return 9;
+
+    return 0; // Unknown generation
+}
+
+// Checks if a species is a base form (has no pre-evolution)
+static bool32 IsBaseForm(u16 species)
+{
+    // Search all species to see if any evolve into this species
+    for (u16 i = 1; i < RANDOMIZER_SPECIES_COUNT; i++)
+    {
+        const struct Evolution *evolutions = GetSpeciesEvolutions(i);
+        if (evolutions == NULL)
+            continue;
+
+        // Check all evolutions of species i
+        for (u16 j = 0; evolutions[j].method != EVOLUTIONS_END; j++)
+        {
+            if (evolutions[j].targetSpecies == species)
+            {
+                // Found a pre-evolution, so this is not a base form
+                return FALSE;
+            }
+        }
+    }
+
+    // No pre-evolution found, this is a base form
+    return TRUE;
+}
+
 u32 GenerateSeedForRandomizer(void)
 {
     u32 data;
@@ -275,6 +326,8 @@ u16 GetRandomizerOption(enum RandomizerOption option)
     switch(option) {
         case RANDOMIZER_OPTION_SPECIES_MODE:
             return VarGet(RANDOMIZER_VAR_SPECIES_MODE);
+        case RANDOMIZER_OPTION_MONO_REGION:
+            return VarGet(RANDOMIZER_VAR_MONO_REGION);
         default: // Unknown option.
             return 0;
     }
@@ -478,8 +531,8 @@ static void GetGroupRange(u16 group, enum RandomizerSpeciesMode mode, u16 *resul
         return;
     }
 
-    // BST mode: species can randomize to species with similar BST.
-    if (mode == MON_RANDOM_BST)
+    // BST mode and Mono Region mode: species can randomize to species with similar BST.
+    if (mode == MON_RANDOM_BST || mode == MON_MONO_REGION)
     {
         // Choose a 10.24% range around the base BST.
         s32 base, minScaled, maxScaled;
@@ -542,6 +595,7 @@ struct RamSpeciesTable
 {
     enum RandomizerSpeciesMode mode;
     bool16 tableInitialized;
+    u8 cachedRegion;
     struct SpeciesTable speciesTable;
 };
 
@@ -679,6 +733,36 @@ static void FillSpeciesGroupsEvolution(struct SpeciesTable* entries)
     }
 }
 
+static void FillSpeciesGroupsMonoRegion(struct SpeciesTable* entries)
+{
+    u16 i;
+    u8 targetGeneration = GetRandomizerOption(RANDOMIZER_OPTION_MONO_REGION);
+
+    for (i = 0; i < RANDOMIZER_SPECIES_COUNT; i++)
+    {
+        const struct SpeciesInfo *curSpeciesInfo;
+        u16 group;
+
+        entries->groupIndexToSpecies[i] = i;
+
+        // Only include base forms from the target generation
+        if (IsSpeciesPermitted(i) && GetSpeciesGeneration(i) == targetGeneration && IsBaseForm(i))
+        {
+            // Use BST-based grouping (scaled randomizer) within the generation
+            curSpeciesInfo = &gSpeciesInfo[i];
+            group = curSpeciesInfo->baseAttack;
+            group += curSpeciesInfo->baseDefense;
+            group += curSpeciesInfo->baseSpAttack;
+            group += curSpeciesInfo->baseSpDefense;
+            group += curSpeciesInfo->baseHP;
+            group += curSpeciesInfo->baseSpeed;
+            entries->groupData[i] = group;
+        }
+        else
+            entries->groupData[i] = GROUP_INVALID; // Evolved forms and other generations are invalid
+    }
+}
+
 static inline u16 LeftChildIndex(u16 index)
 {
     return 2*index + 1;
@@ -698,6 +782,7 @@ static void BuildRandomizerSpeciesTable(enum RandomizerSpeciesMode mode)
 
     sRamSpeciesTable.tableInitialized = TRUE;
     sRamSpeciesTable.mode = mode;
+    sRamSpeciesTable.cachedRegion = GetRandomizerOption(RANDOMIZER_OPTION_MONO_REGION);
     speciesTable = &sRamSpeciesTable.speciesTable;
 
     switch(mode)
@@ -710,6 +795,9 @@ static void BuildRandomizerSpeciesTable(enum RandomizerSpeciesMode mode)
             break;
         case MON_EVOLUTION:
             FillSpeciesGroupsEvolution(speciesTable);
+            break;
+        case MON_MONO_REGION:
+            FillSpeciesGroupsMonoRegion(speciesTable);
             break;
         case MON_RANDOM:
         default:
@@ -763,7 +851,11 @@ static void BuildRandomizerSpeciesTable(enum RandomizerSpeciesMode mode)
 
 static const struct SpeciesTable* GetSpeciesTable(enum RandomizerSpeciesMode mode)
 {
-    if (!sRamSpeciesTable.tableInitialized || mode != sRamSpeciesTable.mode )
+    u8 currentRegion = GetRandomizerOption(RANDOMIZER_OPTION_MONO_REGION);
+
+    if (!sRamSpeciesTable.tableInitialized
+        || mode != sRamSpeciesTable.mode
+        || (mode == MON_MONO_REGION && currentRegion != sRamSpeciesTable.cachedRegion))
         BuildRandomizerSpeciesTable(mode);
 
     return &sRamSpeciesTable.speciesTable;
@@ -786,12 +878,137 @@ static u16 RandomizeMonTableLookup(struct Sfc32State* state, enum RandomizerSpec
     originalGroup = GetSpeciesGroup(table, species);
 
     if (originalGroup == GROUP_INVALID)
-        return species;
+    {
+        // For mono region mode, if original species is not in selected generation,
+        // calculate its BST and use that to find a similar BST species in the selected generation
+        if (mode == MON_MONO_REGION)
+        {
+            const struct SpeciesInfo *speciesInfo = &gSpeciesInfo[species];
+            originalGroup = speciesInfo->baseHP;
+            originalGroup += speciesInfo->baseAttack;
+            originalGroup += speciesInfo->baseDefense;
+            originalGroup += speciesInfo->baseSpAttack;
+            originalGroup += speciesInfo->baseSpDefense;
+            originalGroup += speciesInfo->baseSpeed;
+        }
+        else
+            return species;
+    }
 
     GetGroupRange(originalGroup, mode, &minGroup, &maxGroup);
     GetIndicesFromGroupRange(table, minGroup, maxGroup, &minIndex, &maxIndex);
-    resultIndex = RandomizerNextRange(state, maxIndex - minIndex + 1) + minIndex;
-    return table->groupIndexToSpecies[resultIndex];
+
+    // Validate that we have valid species in range
+    if (minIndex > maxIndex)
+    {
+        // No species found in BST range
+        if (mode == MON_MONO_REGION)
+        {
+            // For mono region, fall back to ANY species from selected generation
+            // instead of returning original (which may be wrong generation)
+            minGroup = 0;
+            maxGroup = GROUP_INVALID - 1;
+            GetIndicesFromGroupRange(table, minGroup, maxGroup, &minIndex, &maxIndex);
+        }
+        else
+        {
+            return species;
+        }
+    }
+
+    // For mono region, ensure we don't select GROUP_INVALID species
+    if (mode == MON_MONO_REGION)
+    {
+        u16 attempts = 0;
+        u16 expandedSearch = 0;
+        do {
+            resultIndex = RandomizerNextRange(state, maxIndex - minIndex + 1) + minIndex;
+            attempts++;
+            // Safety check: if we can't find a valid species after 100 attempts,
+            // expand search to entire generation instead of returning wrong-gen species
+            if (attempts > 100 && expandedSearch < 2)
+            {
+                minGroup = 0;
+                maxGroup = GROUP_INVALID - 1;
+                GetIndicesFromGroupRange(table, minGroup, maxGroup, &minIndex, &maxIndex);
+                attempts = 0; // Reset and try again with full range
+                expandedSearch++;
+
+                // If still no valid species after expanding, something is very wrong
+                // Pick first valid species from generation as absolute fallback
+                if (minIndex > maxIndex)
+                {
+                    // Find first valid (non-GROUP_INVALID) species
+                    for (resultIndex = 0; resultIndex < RANDOMIZER_SPECIES_COUNT; resultIndex++)
+                    {
+                        if (table->groupData[resultIndex] != GROUP_INVALID)
+                            break;
+                    }
+                    break;
+                }
+            }
+        } while (table->groupData[resultIndex] == GROUP_INVALID && attempts <= 200 && expandedSearch < 2);
+
+        // Final validation: ensure we never return an invalid species
+        if (table->groupData[resultIndex] == GROUP_INVALID)
+        {
+            // Absolute fallback: find ANY valid species from the generation
+            for (resultIndex = 0; resultIndex < RANDOMIZER_SPECIES_COUNT; resultIndex++)
+            {
+                if (table->groupData[resultIndex] != GROUP_INVALID)
+                    break;
+            }
+        }
+    }
+    else
+    {
+        resultIndex = RandomizerNextRange(state, maxIndex - minIndex + 1) + minIndex;
+    }
+
+    // Validate final result before returning
+    u16 resultSpecies = table->groupIndexToSpecies[resultIndex];
+    if (!IsSpeciesPermitted(resultSpecies))
+    {
+        // Last resort: find first valid species from generation
+        if (mode == MON_MONO_REGION)
+        {
+            for (resultIndex = 0; resultIndex < RANDOMIZER_SPECIES_COUNT; resultIndex++)
+            {
+                if (table->groupData[resultIndex] != GROUP_INVALID)
+                {
+                    resultSpecies = table->groupIndexToSpecies[resultIndex];
+                    if (IsSpeciesPermitted(resultSpecies))
+                        break;
+                }
+            }
+        }
+        else
+        {
+            return species;
+        }
+    }
+
+    // For mono region, double-check the generation is correct
+    if (mode == MON_MONO_REGION)
+    {
+        u8 targetGeneration = GetRandomizerOption(RANDOMIZER_OPTION_MONO_REGION);
+        if (GetSpeciesGeneration(resultSpecies) != targetGeneration)
+        {
+            // Wrong generation! Find a valid species from correct generation
+            for (resultIndex = 0; resultIndex < RANDOMIZER_SPECIES_COUNT; resultIndex++)
+            {
+                if (table->groupData[resultIndex] != GROUP_INVALID)
+                {
+                    resultSpecies = table->groupIndexToSpecies[resultIndex];
+                    if (IsSpeciesPermitted(resultSpecies) && GetSpeciesGeneration(resultSpecies) == targetGeneration)
+                        break;
+                }
+            }
+        }
+        // No need to call GetBaseForm() - the table already contains only base forms
+    }
+
+    return resultSpecies;
 }
 
 static u16 RandomizeMonFromSeed(struct Sfc32State *state, enum RandomizerSpeciesMode mode, u16 species)
@@ -827,6 +1044,7 @@ void GetUniqueMonList(enum RandomizerReason reason, enum RandomizerSpeciesMode m
 
         // Find the next mon.
 
+        u32 retryCount = 0;
         while (!foundNextMon)
         {
             u16 wordIndex, adjustedCurMon;
@@ -845,7 +1063,17 @@ void GetUniqueMonList(enum RandomizerReason reason, enum RandomizerSpeciesMode m
 
             // If set, this mon has been seen already.
             if (bitVectorWord & (1 << bitIndex))
+            {
+                retryCount++;
+                // Safety: if we can't find a unique mon after 1000 tries, allow duplicates
+                // This prevents infinite loops in mono region mode with limited species pool
+                if (retryCount > 1000)
+                {
+                    foundNextMon = TRUE;
+                    break;
+                }
                 continue;
+            }
 
             bitVectorWord |= 1 << bitIndex;
             seenMonBitVector[wordIndex] = bitVectorWord;
