@@ -179,6 +179,178 @@ static void FeebasSeedRng(u16 seed)
     sFeebasRngValue = seed;
 }
 
+// Buffers for filtered encounter tables
+struct WildPokemon sFilteredLandMons[LAND_WILD_COUNT];
+struct WildPokemon sFilteredWaterMons[WATER_WILD_COUNT];
+struct WildPokemon sFilteredRockMons[ROCK_WILD_COUNT];
+struct WildPokemon sFilteredFishMons[FISH_WILD_COUNT];
+struct WildPokemonInfo sFilteredLandInfo;
+struct WildPokemonInfo sFilteredWaterInfo;
+struct WildPokemonInfo sFilteredRockInfo;
+struct WildPokemonInfo sFilteredFishInfo;
+
+// Filters an encounter table to only include Pokemon from the selected generation
+// Fills all slots by duplicating the valid Pokemon
+const struct WildPokemonInfo *FilterEncounterTableByGeneration(
+    const struct WildPokemonInfo *originalInfo,
+    struct WildPokemon *buffer,
+    struct WildPokemonInfo *filteredInfo,
+    u8 encounterCount)
+{
+    u8 targetGen = VarGet(VAR_MONO_GENERATION);
+    u16 validSpecies[12]; // Max is LAND_WILD_COUNT = 12
+    u8 validMinLevels[12];
+    u8 validMaxLevels[12];
+    u8 validCount = 0;
+    u8 i;
+
+    if (originalInfo == NULL)
+        return NULL;
+
+    // Build list of unique valid Pokemon from the original table
+    for (i = 0; i < encounterCount; i++)
+    {
+        u16 species = originalInfo->wildPokemon[i].species;
+
+        // Check if this species is from the target generation
+        if (GetSpeciesGeneration(species) != targetGen)
+            continue;
+
+        // Check if we already have this species
+        bool32 alreadyAdded = FALSE;
+        for (u8 j = 0; j < validCount; j++)
+        {
+            if (validSpecies[j] == species)
+            {
+                alreadyAdded = TRUE;
+                break;
+            }
+        }
+
+        if (!alreadyAdded)
+        {
+            validSpecies[validCount] = species;
+            validMinLevels[validCount] = originalInfo->wildPokemon[i].minLevel;
+            validMaxLevels[validCount] = originalInfo->wildPokemon[i].maxLevel;
+            validCount++;
+        }
+    }
+
+    // If no valid Pokemon found, return NULL to indicate no encounters
+    if (validCount == 0)
+        return NULL;
+
+    // Fill all slots by cycling through valid Pokemon
+    for (i = 0; i < encounterCount; i++)
+    {
+        u8 validIndex = i % validCount;
+        buffer[i].species = validSpecies[validIndex];
+        buffer[i].minLevel = validMinLevels[validIndex];
+        buffer[i].maxLevel = validMaxLevels[validIndex];
+    }
+
+    // Set up the filtered info structure
+    filteredInfo->encounterRate = originalInfo->encounterRate;
+    filteredInfo->wildPokemon = buffer;
+
+    return filteredInfo;
+}
+
+// Special filter for fishing that preserves rod tiers
+// Old Rod: slots 0-2, Good Rod: slots 3-5, Super Rod: slots 6-9
+static const struct WildPokemonInfo *FilterFishingTableByGeneration(
+    const struct WildPokemonInfo *originalInfo,
+    struct WildPokemon *buffer,
+    struct WildPokemonInfo *filteredInfo)
+{
+    u8 targetGen = VarGet(VAR_MONO_GENERATION);
+    u16 validSpecies[3][3]; // [rod tier][up to 3 species per tier]
+    u8 validMinLevels[3][3];
+    u8 validMaxLevels[3][3];
+    u8 validCounts[3] = {0, 0, 0}; // Count for each rod tier
+    u8 i, tier;
+    const u8 rodTierStarts[3] = {0, 3, 6}; // Start slot for each rod tier
+    const u8 rodTierSizes[3] = {3, 3, 4};  // Size of each rod tier
+
+    if (originalInfo == NULL)
+        return NULL;
+
+    // Build lists of valid Pokemon for each rod tier
+    for (tier = 0; tier < 3; tier++)
+    {
+        u8 tierStart = rodTierStarts[tier];
+        u8 tierSize = rodTierSizes[tier];
+
+        for (i = 0; i < tierSize; i++)
+        {
+            u8 slotIndex = tierStart + i;
+            u16 species = originalInfo->wildPokemon[slotIndex].species;
+
+            // Check if this species is from the target generation
+            if (GetSpeciesGeneration(species) != targetGen)
+                continue;
+
+            // Check if we already have this species in this tier
+            bool32 alreadyAdded = FALSE;
+            for (u8 j = 0; j < validCounts[tier]; j++)
+            {
+                if (validSpecies[tier][j] == species)
+                {
+                    alreadyAdded = TRUE;
+                    break;
+                }
+            }
+
+            if (!alreadyAdded && validCounts[tier] < 3)
+            {
+                validSpecies[tier][validCounts[tier]] = species;
+                validMinLevels[tier][validCounts[tier]] = originalInfo->wildPokemon[slotIndex].minLevel;
+                validMaxLevels[tier][validCounts[tier]] = originalInfo->wildPokemon[slotIndex].maxLevel;
+                validCounts[tier]++;
+            }
+        }
+    }
+
+    // If no valid Pokemon in any tier, return NULL
+    if (validCounts[0] == 0 && validCounts[1] == 0 && validCounts[2] == 0)
+        return NULL;
+
+    // Fill each rod tier's slots
+    for (tier = 0; tier < 3; tier++)
+    {
+        u8 tierStart = rodTierStarts[tier];
+        u8 tierSize = rodTierSizes[tier];
+
+        if (validCounts[tier] == 0)
+        {
+            // No Pokemon from selected gen in this tier - fill with SPECIES_NONE
+            for (i = 0; i < tierSize; i++)
+            {
+                buffer[tierStart + i].species = SPECIES_NONE;
+                buffer[tierStart + i].minLevel = 1;
+                buffer[tierStart + i].maxLevel = 1;
+            }
+        }
+        else
+        {
+            // Fill tier slots by cycling through valid Pokemon for this tier
+            for (i = 0; i < tierSize; i++)
+            {
+                u8 validIndex = i % validCounts[tier];
+                buffer[tierStart + i].species = validSpecies[tier][validIndex];
+                buffer[tierStart + i].minLevel = validMinLevels[tier][validIndex];
+                buffer[tierStart + i].maxLevel = validMaxLevels[tier][validIndex];
+            }
+        }
+    }
+
+    // Set up the filtered info structure
+    filteredInfo->encounterRate = originalInfo->encounterRate;
+    filteredInfo->wildPokemon = buffer;
+
+    return filteredInfo;
+}
+
 // LAND_WILD_COUNT
 u8 ChooseWildMonIndex_Land(void)
 {
@@ -463,6 +635,29 @@ static bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum 
     u8 level;
     u16 species;
 
+    // Apply mono-generation filter to encounter table if enabled
+    if (FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+    {
+        switch (area)
+        {
+        case WILD_AREA_LAND:
+            wildMonInfo = FilterEncounterTableByGeneration(wildMonInfo, sFilteredLandMons, &sFilteredLandInfo, LAND_WILD_COUNT);
+            break;
+        case WILD_AREA_WATER:
+            wildMonInfo = FilterEncounterTableByGeneration(wildMonInfo, sFilteredWaterMons, &sFilteredWaterInfo, WATER_WILD_COUNT);
+            break;
+        case WILD_AREA_ROCKS:
+            wildMonInfo = FilterEncounterTableByGeneration(wildMonInfo, sFilteredRockMons, &sFilteredRockInfo, ROCK_WILD_COUNT);
+            break;
+        default:
+            break;
+        }
+
+        // If no Pokemon from selected generation in this area, no encounter happens
+        if (wildMonInfo == NULL)
+            return FALSE;
+    }
+
     switch (area)
     {
     case WILD_AREA_LAND:
@@ -526,9 +721,22 @@ static bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum 
 
 static u16 GenerateFishingWildMon(const struct WildPokemonInfo *wildMonInfo, u8 rod)
 {
+    // Apply mono-generation filter to encounter table if enabled
+    if (FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+    {
+        wildMonInfo = FilterFishingTableByGeneration(wildMonInfo, sFilteredFishMons, &sFilteredFishInfo);
+        // If no fish from selected generation, return SPECIES_NONE
+        if (wildMonInfo == NULL)
+            return SPECIES_NONE;
+    }
+
     u8 wildMonIndex = ChooseWildMonIndex_Fishing(rod);
     u8 level = ChooseWildMonLevel(wildMonInfo->wildPokemon, wildMonIndex, WILD_AREA_FISHING);
     u16 species = wildMonInfo->wildPokemon[wildMonIndex].species;
+
+    // If the selected slot has SPECIES_NONE (no Pokemon from selected gen for this rod tier), return SPECIES_NONE
+    if (species == SPECIES_NONE)
+        return SPECIES_NONE;
 
     #if RANDOMIZER_AVAILABLE == TRUE
         species = RandomizeWildEncounter(
@@ -880,10 +1088,59 @@ bool8 DoesCurrentMapHaveFishingMons(void)
 {
     u16 headerId = GetCurrentMapWildMonHeaderId();
 
-    if (headerId != HEADER_NONE && gWildMonHeaders[headerId].fishingMonsInfo != NULL)
-        return TRUE;
-    else
+    if (headerId == HEADER_NONE || gWildMonHeaders[headerId].fishingMonsInfo == NULL)
         return FALSE;
+
+    // Check if mono-generation filter would result in no fish
+    if (FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+    {
+        const struct WildPokemonInfo *filteredInfo = FilterFishingTableByGeneration(
+            gWildMonHeaders[headerId].fishingMonsInfo,
+            sFilteredFishMons,
+            &sFilteredFishInfo);
+
+        // If filter returns NULL, there are no fish from selected generation
+        if (filteredInfo == NULL)
+            return FALSE;
+    }
+
+    return TRUE;
+}
+
+// Check if a specific rod tier has any Pokemon from the selected generation
+bool8 DoesRodHaveFishingMonsInGeneration(u8 rod)
+{
+    u16 headerId = GetCurrentMapWildMonHeaderId();
+
+    if (headerId == HEADER_NONE || gWildMonHeaders[headerId].fishingMonsInfo == NULL)
+        return FALSE;
+
+    // If mono-generation filtering is not enabled, use normal check
+    if (!FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+        return TRUE;
+
+    // Filter the fishing table by generation
+    const struct WildPokemonInfo *filteredInfo = FilterFishingTableByGeneration(
+        gWildMonHeaders[headerId].fishingMonsInfo,
+        sFilteredFishMons,
+        &sFilteredFishInfo);
+
+    if (filteredInfo == NULL)
+        return FALSE;
+
+    // Check if the specific rod tier has any valid Pokemon (not SPECIES_NONE)
+    const u8 rodTierStarts[3] = {0, 3, 6};  // Start slot for each rod tier
+    const u8 rodTierSizes[3] = {3, 3, 4};   // Size of each rod tier
+    u8 tierStart = rodTierStarts[rod];
+    u8 tierSize = rodTierSizes[rod];
+
+    for (u8 i = 0; i < tierSize; i++)
+    {
+        if (filteredInfo->wildPokemon[tierStart + i].species != SPECIES_NONE)
+            return TRUE; // Found at least one valid Pokemon for this rod
+    }
+
+    return FALSE; // All slots for this rod tier are SPECIES_NONE
 }
 
 u32 CalculateChainFishingShinyRolls(void)

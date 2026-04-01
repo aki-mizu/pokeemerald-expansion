@@ -257,7 +257,7 @@ static bool32 IsSpeciesPermitted(u16 species)
     return TRUE;
 };
 
-static u8 GetSpeciesGeneration(u16 species)
+u8 GetSpeciesGeneration(u16 species)
 {
     u16 dexNum = gSpeciesInfo[species].natDexNum;
 

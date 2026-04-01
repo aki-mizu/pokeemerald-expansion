@@ -69,6 +69,8 @@ InsideOfTruck_EventScript_SetDefaultSettings:
 	clearflag FLAG_RANDOMIZER_ENABLED
 	clearflag FLAG_RANDOM_ABILITIES_ENABLED
 	clearflag FLAG_RANDOM_ABILITIES_ENABLED
+	clearflag FLAG_MONO_GENERATION_ENCOUNTERS
+	setvar VAR_MONO_GENERATION, 0
 	special ForceBattleStyleSetPleaseGod
 	setvar VAR_RANDOMIZER_MODE, MAX_MON_MODE
 	return
@@ -115,16 +117,25 @@ script InsideOfTruck_EventScript_StartSettingsMenu {
 		dynmultipush("Difficulty Options", 0)
 		dynmultipush("{COLOR GREEN}{SHADOW LIGHT_GREEN}Minimal Grinding Mode", 1)
 		dynmultipush("Randomizer Options", 2)
-		dynmultipush("Done", 3)
 	}
 	else
 	{
 		dynmultipush("Difficulty Options", 0)
 		dynmultipush("{COLOR RED}{SHADOW LIGHT_RED}Minimal Grinding Mode", 1)
 		dynmultipush("Randomizer Options", 2)
-		dynmultipush("Done", 3)
 	}
-	
+
+	if(flag(FLAG_MONO_GENERATION_ENCOUNTERS))
+	{
+		dynmultipush("{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono-Generation Encounters", 3)
+	}
+	else
+	{
+		dynmultipush("Mono-Generation Encounters", 3)
+	}
+
+	dynmultipush("Done", 4)
+
     // setting initial selected to a non-existant ID will always have it point to the first option
 	//.macro dynmultistack left:req, top:req, ignoreBPress:req, maxBeforeScroll:req, shouldSort:req, initialSelected:req, callbacks:req
 	dynmultistack(0, 0, TRUE, 6, FALSE, 0, DYN_MULTICHOICE_CB_NONE)
@@ -136,15 +147,20 @@ script InsideOfTruck_EventScript_StartSettingsMenu {
 
 	if (var(VAR_RESULT) == 1)
 	{
-		goto(InsideOfTruck_EventScript_MinGrindingMode)	
+		goto(InsideOfTruck_EventScript_MinGrindingMode)
 	}
 
 	if (var(VAR_RESULT) == 2)
 	{
-		goto(InsideOfTruck_EventScript_RandomzierOptions)	
+		goto(InsideOfTruck_EventScript_RandomzierOptions)
 	}
 
-	if (var(VAR_RESULT) == 3) 
+	if (var(VAR_RESULT) == 3)
+	{
+		goto(InsideOfTruck_EventScript_MonoGenerationEncounters)
+	}
+
+	if (var(VAR_RESULT) == 4)
 	{
 		goto(InsideOfTruck_EventScript_SaveSettingsDone)
 	}
@@ -545,6 +561,51 @@ script InsideOfTruck_EventScript_SaveSettingsDone {
 	end
 }
 
+script InsideOfTruck_EventScript_MonoGenerationEncounters {
+	if(flag(FLAG_MONO_GENERATION_ENCOUNTERS))
+	{
+		msgbox(MonoGenerationAlreadyOnYesNo, MSGBOX_YESNO)
+		if(var(VAR_RESULT) == YES)
+		{
+			clearflag(FLAG_MONO_GENERATION_ENCOUNTERS)
+			setvar(VAR_MONO_GENERATION, 0)
+			msgbox(MonoGenerationDisabled)
+		}
+	}
+	else
+	{
+		msgbox(MonoGenerationAlreadyOffYesNo, MSGBOX_YESNO)
+		if(var(VAR_RESULT) == YES)
+		{
+			goto(InsideOfTruck_EventScript_SelectMonoGeneration)
+		}
+	}
+	goto(InsideOfTruck_EventScript_StartSettingsMenu)
+}
+
+script InsideOfTruck_EventScript_SelectMonoGeneration {
+	msgbox(SelectMonoGenerationPrompt)
+	dynmultipush("Gen 1 (Kanto)", 1)
+	dynmultipush("Gen 2 (Johto)", 2)
+	dynmultipush("Gen 3 (Hoenn)", 3)
+	dynmultipush("Gen 4 (Sinnoh)", 4)
+	dynmultipush("Gen 5 (Unova)", 5)
+	dynmultipush("Gen 6 (Kalos)", 6)
+	dynmultipush("Gen 7 (Alola)", 7)
+	dynmultipush("Gen 8 (Galar)", 8)
+	dynmultipush("Gen 9 (Paldea)", 9)
+	dynmultistack(0, 0, FALSE, 6, FALSE, 0, DYN_MULTICHOICE_CB_NONE)
+
+	copyvar(VAR_MONO_GENERATION, VAR_RESULT)
+
+	if(var(VAR_RESULT) >= 1 && var(VAR_RESULT) <= 9)
+	{
+		setflag(FLAG_MONO_GENERATION_ENCOUNTERS)
+		msgbox(MonoGenerationEnabled)
+	}
+	goto(InsideOfTruck_EventScript_StartSettingsMenu)
+}
+
 
 text WhichOption
 {
@@ -899,4 +960,46 @@ text CustomSettingsSaved
 {
 	"Custom settings saved.\n"
 	"Good luck!"
+}
+
+text MonoGenerationAlreadyOnYesNo
+{
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono-Generation Encounters{COLOR DARK_GRAY}{SHADOW LIGHT_GRAY} restricts\n"
+	"all wild encounter tables to only show\l"
+	"Pokémon from the generation you select.\p"
+	"Each route's encounter table will be\n"
+	"compacted to only include Pokémon from\l"
+	"that generation, with duplicates filling\l"
+	"empty slots.\p"
+	"Do you want to turn off\n"
+	"{COLOR RED}{SHADOW LIGHT_RED}Mono-Generation Encounters?"
+}
+
+text MonoGenerationAlreadyOffYesNo
+{
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono-Generation Encounters{COLOR DARK_GRAY}{SHADOW LIGHT_GRAY} restricts\n"
+	"all wild encounter tables to only show\l"
+	"Pokémon from the generation you select.\p"
+	"Each route's encounter table will be\n"
+	"compacted to only include Pokémon from\l"
+	"that generation, with duplicates filling\l"
+	"empty slots.\p"
+	"Do you want to turn on\n"
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono-Generation Encounters?"
+}
+
+text MonoGenerationEnabled
+{
+	"{COLOR GREEN}{SHADOW LIGHT_GREEN}Mono-Generation Encounters enabled."
+}
+
+text MonoGenerationDisabled
+{
+	"{COLOR RED}{SHADOW LIGHT_RED}Mono-Generation Encounters disabled."
+}
+
+text SelectMonoGenerationPrompt
+{
+	"Which generation would you like\n"
+	"to restrict wild encounters to?"
 }

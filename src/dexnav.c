@@ -1463,6 +1463,13 @@ static u8 GetEncounterLevelFromMapData(u16 species, u8 environment)
     u8 max = 0;
     u8 i;
     u16 speciesToCheck;
+
+    // Apply mono-generation filter if enabled
+    if (FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+    {
+        landMonsInfo = FilterEncounterTableByGeneration(landMonsInfo, sFilteredLandMons, &sFilteredLandInfo, LAND_WILD_COUNT);
+        waterMonsInfo = FilterEncounterTableByGeneration(waterMonsInfo, sFilteredWaterMons, &sFilteredWaterInfo, WATER_WILD_COUNT);
+    }
     
     switch (environment)
     {
@@ -1698,7 +1705,13 @@ static bool8 CapturedAllLandMons(u16 headerId)
     u16 i, species;
     int count = 0;
     const struct WildPokemonInfo* landMonsInfo = gWildMonHeaders[headerId].landMonsInfo;
-        
+
+    // Apply mono-generation filter if enabled
+    if (FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+    {
+        landMonsInfo = FilterEncounterTableByGeneration(landMonsInfo, sFilteredLandMons, &sFilteredLandInfo, LAND_WILD_COUNT);
+    }
+
     if (landMonsInfo != NULL)
     {        
         for (i = 0; i < LAND_WILD_COUNT; ++i)
@@ -1738,6 +1751,12 @@ static bool8 CapturedAllWaterMons(u16 headerId)
     u16 species;
     u8 count = 0;
     const struct WildPokemonInfo* waterMonsInfo = gWildMonHeaders[headerId].waterMonsInfo;
+
+    // Apply mono-generation filter if enabled
+    if (FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+    {
+        waterMonsInfo = FilterEncounterTableByGeneration(waterMonsInfo, sFilteredWaterMons, &sFilteredWaterInfo, WATER_WILD_COUNT);
+    }
 
     if (waterMonsInfo != NULL)
     {
@@ -1938,12 +1957,19 @@ static void DexNavLoadEncounterData(void)
     const struct WildPokemonInfo* landMonsInfo = gWildMonHeaders[headerId].landMonsInfo;
     const struct WildPokemonInfo* waterMonsInfo = gWildMonHeaders[headerId].waterMonsInfo;
     const struct WildPokemonInfo* hiddenMonsInfo = gWildMonHeaders[headerId].hiddenMonsInfo;
-    
+
+    // Apply mono-generation filter if enabled
+    if (FlagGet(FLAG_MONO_GENERATION_ENCOUNTERS))
+    {
+        landMonsInfo = FilterEncounterTableByGeneration(landMonsInfo, sFilteredLandMons, &sFilteredLandInfo, LAND_WILD_COUNT);
+        waterMonsInfo = FilterEncounterTableByGeneration(waterMonsInfo, sFilteredWaterMons, &sFilteredWaterInfo, WATER_WILD_COUNT);
+    }
+
     // nop struct data
     memset(sDexNavUiDataPtr->landSpecies, 0, sizeof(sDexNavUiDataPtr->landSpecies));
     memset(sDexNavUiDataPtr->waterSpecies, 0, sizeof(sDexNavUiDataPtr->waterSpecies));
     memset(sDexNavUiDataPtr->hiddenSpecies, 0, sizeof(sDexNavUiDataPtr->hiddenSpecies));
-    
+
     // land mons
     if (landMonsInfo != NULL && landMonsInfo->encounterRate != 0)
     {

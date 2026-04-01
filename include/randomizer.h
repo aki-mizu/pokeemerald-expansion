@@ -30,6 +30,7 @@ struct RandomizerGroupSet {
 
 u32 GetRandomizerSeed(void);
 bool32 RandomizerFeatureEnabled(enum RandomizerFeature feature);
+u8 GetSpeciesGeneration(u16 species);
 
 struct Sfc32State RandomizerRandSeed(enum RandomizerReason reason, u32 data1, u32 data2);
 

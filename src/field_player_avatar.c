@@ -1921,6 +1921,13 @@ static bool32 Fishing_CheckForBite(struct Task *task)
         return TRUE;
     }
 
+    // Check if this specific rod has Pokemon from selected generation
+    if (!DoesRodHaveFishingMonsInGeneration(task->tFishingRod))
+    {
+        task->tStep = FISHING_NOT_EVEN_NIBBLE;
+        return TRUE;
+    }
+
     firstMonHasSuctionOrSticky = Fishing_DoesFirstMonInPartyHaveSuctionCupsOrStickyHold();
 
     if(firstMonHasSuctionOrSticky)
